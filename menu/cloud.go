@@ -2,13 +2,14 @@ package menu
 
 import (
 	"fmt"
+
 	"github.com/trzsz/promptui"
 )
 
 func showCloudMenu() int {
 	menuPrompt := promptui.Select{
 		Label: "Choose an operation:",
-		Items: []string{"GCP", "Return to Main Menu"},
+		Items: []string{"GCP", "AWS", "Return to Main Menu"},
 	}
 
 	CloudIndex, _, err := menuPrompt.Run()
@@ -30,7 +31,10 @@ func RunCloud() {
 		case 0:
 			RunGCP()
 
-		case 1: // Return to main menu
+		case 1:
+			RunAWS()
+
+		case 2: // Return to main menu
 			CloudActive = false
 		}
 	}
