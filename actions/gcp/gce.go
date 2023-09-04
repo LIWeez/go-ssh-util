@@ -28,6 +28,13 @@ type GCEInstanceConfig struct {
 	// Add other configuration fields as needed
 }
 
+type MachineTypeInfo struct {
+	Name   string
+	Zone   string
+	CPU    string
+	Memory string
+}
+
 func RunGetVMs() {
 	selectedHost, ExecutionMode, err := config.ChooseAlias()
 	if err != nil {
@@ -207,6 +214,11 @@ func RunCreateGCEInstance() {
 	// 	fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 	// 	return
 	// }
+	selectedSeries, err := chooseMachineTypeSeries()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return
+	}
 
 	// Allow the user to choose a machine type group
 	selectedGroup, err := chooseMachineTypeGroup()
@@ -216,7 +228,7 @@ func RunCreateGCEInstance() {
 	}
 
 	// List machine types for the selected group and zone
-	machineTypes, err := listMachineTypes(selectedZone, selectedGroup)
+	machineTypes, err := listMachineTypes(selectedZone, selectedSeries, selectedGroup)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return
@@ -251,6 +263,45 @@ func RunCreateGCEInstance() {
 	fmt.Println("GCE instance created successfully.")
 }
 
+func chooseMachineTypeSeries() (string, error) {
+	series := []struct {
+		Label       string
+		Description string
+	}{
+		{"c3", "Intel Sapphire Rapids CPU"},
+		{"e2", "根據可用性選擇CPU"},
+		{"n2", "Intel Cascade Lake 和 Ice Lake CPU"},
+		{"n2d", "AMD EPYC CPU"},
+		{"t2a", "Ampere Altra ARM CPU"},
+		{"t2d", "AMD EPYC Milan CPU"},
+		{"n1", "Intel Skylake CPU"},
+	}
+	templates := &promptui.SelectTemplates{
+		Label:    "{{ . }}?",
+		Active:   "\U0001F4BB {{ .Label | cyan }} ({{ .Description | red }})",
+		Inactive: "  {{ .Label | cyan }} ({{ .Description | red }})",
+		Selected: "\U0001F4BB {{ .Label | red | cyan }}",
+	}
+
+	prompt := promptui.Select{
+		Label:     "Select a machine type series:",
+		Items:     series,
+		Templates: templates,
+		Size:      10,
+	}
+
+	// Show the prompt and get the selected option
+	selectedIndex, _, err := prompt.Run()
+	if err != nil {
+		return "", err
+	}
+
+	// Get the label of the selected option
+	selectedLabel := series[selectedIndex].Label
+	fmt.Println(selectedLabel)
+	return selectedLabel, nil
+}
+
 // Function to allow the user to choose a machine type group
 func chooseMachineTypeGroup() (string, error) {
 	prompt := promptui.Select{
@@ -269,72 +320,82 @@ func chooseMachineTypeGroup() (string, error) {
 }
 
 // Function to list machine types for the selected group and zone
-func listMachineTypes(zone, group string) ([]string, error) {
+func listMachineTypes(zone, series, group string) ([]MachineTypeInfo, error) {
 	// Construct the 'gcloud' command to list machine types with the specified zone filter
-	gcloudCmd := exec.Command("gcloud", "compute", "machine-types", "list", fmt.Sprintf("--filter=zone:%s", zone))
-
-	// Create a pipe to capture the output of the 'gcloud' command
-	gcloudOutput, err := gcloudCmd.StdoutPipe()
+	cmd := exec.Command("gcloud", "compute", "machine-types", "list", "--filter=zone:"+zone)
+	cmd.Stderr = os.Stderr
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		fmt.Println("Error creating stdout pipe:", err)
 		return nil, err
 	}
 
-	// Start the 'gcloud' command
-	if err := gcloudCmd.Start(); err != nil {
+	if err := cmd.Start(); err != nil {
+		fmt.Println("Error starting command:", err)
 		return nil, err
 	}
-
-	// Create a scanner to read the output line by line
-	scanner := bufio.NewScanner(gcloudOutput)
-
-	// Read the output of the 'gcloud' command line by line
-	var gcloudOutputLines []string
+	var machineTypes []MachineTypeInfo
+	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
-		gcloudOutputLines = append(gcloudOutputLines, scanner.Text())
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-
-	// Construct the 'grep' command to further filter the output
-	grepCmd := exec.Command("grep", group)
-
-	// Set the input of the 'grep' command to the output of the 'gcloud' command
-	grepCmd.Stdin = strings.NewReader(strings.Join(gcloudOutputLines, "\n"))
-
-	// Capture the output of the 'grep' command
-	grepOutput, err := grepCmd.Output()
-	if err != nil {
-		return nil, err
-	}
-
-	// Parse the output of the 'grep' command to extract machine type names
-	var machineTypes []string
-	for _, line := range strings.Split(string(grepOutput), "\n") {
-		if strings.TrimSpace(line) != "" {
-			machineTypes = append(machineTypes, strings.Fields(line)[0])
+		line := scanner.Text()
+		if strings.Contains(line, "n2-standard") {
+			fields := strings.Fields(line)
+			if len(fields) >= 4 {
+				machineType := MachineTypeInfo{
+					Name:   fields[0],
+					Zone:   fields[1],
+					CPU:    fields[2],
+					Memory: fields[3],
+				}
+				machineTypes = append(machineTypes, machineType)
+			}
 		}
+	}
+
+	if err := cmd.Wait(); err != nil {
+		fmt.Println("Error waiting for command to finish:", err)
+		return nil, err
+	}
+
+	if len(machineTypes) == 0 {
+		fmt.Println("No 'n2-highcpu' machine types found in the specified zone.")
+		return nil, err
 	}
 
 	return machineTypes, nil
 }
 
 // Function to allow the user to choose a machine type
-func chooseMachineType(machineTypes []string) (string, error) {
+func chooseMachineType(machineTypes []MachineTypeInfo) (MachineTypeInfo, error) {
+	templates := &promptui.SelectTemplates{
+		Label:    "{{ . }}",
+		Active:   "\U0001F622 {{ .Name | cyan }} (Zone: {{ .Zone }}, CPU: {{ .CPU }}, Memory: {{ .Memory }})",
+		Inactive: "  {{ .Name | cyan }} (Zone: {{ .Zone }}, CPU: {{ .CPU }}, Memory: {{ .Memory }})",
+		Selected: "\U0001F622 {{ .Name | red | cyan }} (Zone: {{ .Zone | red }}, CPU: {{ .CPU | red }}, Memory: {{ .Memory | red }})",
+		Details: `
+	--------- Detail ----------
+	{{ "Name:" | faint }}	{{ .Name }}
+	{{ "Zone:" | faint }}	{{ .Zone }}
+	{{ "CPU:" | faint }}	{{ .CPU }}
+	{{ "Memory:" | faint }}	{{ .Memory }}`,
+	}
+
 	prompt := promptui.Select{
-		Label: "Select a machine type:",
-		Items: machineTypes,
-		Size:  10,
+		Label:     "Select a Machine Type",
+		Items:     machineTypes,
+		Templates: templates,
+		Size:      10,
 	}
 
 	// Show the prompt and get the selected machine type
-	_, result, err := prompt.Run()
+	index, _, err := prompt.Run()
 	if err != nil {
-		return "", err
+		return MachineTypeInfo{}, err
 	}
 
-	return result, nil
+	selectedMachineType := machineTypes[index]
+
+	return selectedMachineType, nil
 }
 
 // Function to get the list of available zones
@@ -418,7 +479,7 @@ func chooseRegion(regions []string) (string, error) {
 }
 
 // Function to prompt the user for GCE instance configuration
-func promptForGCEInstanceConfig(selectedZone, selectedMachineType string) (GCEInstanceConfig, error) {
+func promptForGCEInstanceConfig(selectedZone string, selectedMachineType MachineTypeInfo) (GCEInstanceConfig, error) {
 	prompt := []*promptui.Prompt{
 		{
 			Label: "Enter instance name:",
@@ -447,18 +508,7 @@ func promptForGCEInstanceConfig(selectedZone, selectedMachineType string) (GCEIn
 			// Set other configuration fields based on prompts
 		}
 		config.Zone = selectedZone
-		config.MachineType = selectedMachineType
+		config.MachineType = selectedMachineType.Name
 	}
 	return config, nil
 }
-
-// Function to execute a 'gcloud' command
-// func execGCloudCommand(command string, ExecutionMode int, selectedHost config.SSHhost) error {
-// 	if ExecutionMode == 1 {
-// 		return ssh.ExecuteLocalCommand(command)
-// 	}
-
-// 	// Execute remotely using SSH
-// 	remoteCommand := fmt.Sprintf("ssh -p %s %s@%s \"%s\"", selectedHost.Port, selectedHost.User, selectedHost.Host, command)
-// 	return ssh.ExecuteRemoteCommand(remoteCommand)
-// }
