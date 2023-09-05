@@ -13,7 +13,7 @@ Go SSH Util is a versatile command-line tool that empowers you to securely manag
 Make sure you have Go installed on your system. Then, install the tool using the following command:
 
 ```sh
-go install github.com/yourusername/go-ssh-util@latest
+go install github.com/sz9751210/go-ssh-util@latest
 ```
 
 ## Prerequisites
