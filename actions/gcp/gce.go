@@ -25,6 +25,7 @@ type GCEInstanceConfig struct {
 	Name        string
 	Zone        string
 	MachineType string
+	ImageInfo   ImageInfo
 	// Add other configuration fields as needed
 }
 
@@ -96,7 +97,7 @@ func ChooseGCE() (GCEInstance, error) {
 	// Capture the output of the command
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return GCEInstance{}, fmt.Errorf("Error:", err)
+		return GCEInstance{}, fmt.Errorf("Error: %v\n", err)
 	}
 
 	// Convert the output to a string
@@ -129,7 +130,7 @@ func ChooseGCE() (GCEInstance, error) {
 	// Show the prompt and get the selected instance
 	index, _, err := prompt.Run()
 	if err != nil {
-		return GCEInstance{}, fmt.Errorf("Error:", err)
+		return GCEInstance{}, fmt.Errorf("Error: %v\n", err)
 	}
 
 	// Get the selected instance by index
@@ -240,17 +241,38 @@ func RunCreateGCEInstance() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return
 	}
+	selectedImage, err := chooseImage()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return
+	}
 
 	// Prompt the user for GCE instance configuration
-	config, err := promptForGCEInstanceConfig(selectedZone, selectedMachineType)
+	config, err := promptForGCEInstanceConfig(selectedZone, selectedMachineType, selectedImage)
 	fmt.Println(config)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return
 	}
 
+	// Create the command using strings.Builder
+	var cmdBuilder strings.Builder
+	cmdBuilder.WriteString("gcloud compute instances create ")
+	cmdBuilder.WriteString(config.Name)
+	cmdBuilder.WriteString(" --zone=")
+	cmdBuilder.WriteString(config.Zone)
+	cmdBuilder.WriteString(" --machine-type=")
+	cmdBuilder.WriteString(config.MachineType)
+	cmdBuilder.WriteString(" --image-project=")
+	cmdBuilder.WriteString(config.ImageInfo.Project)
+	cmdBuilder.WriteString(" --image=")
+	cmdBuilder.WriteString(config.ImageInfo.Name)
+
+	// Get the final command string
+	command := cmdBuilder.String()
+
 	// Construct the 'gcloud' command to create the GCE instance
-	command := fmt.Sprintf("gcloud compute instances create %s --zone=%s --machine-type=%s", config.Name, config.Zone, config.MachineType)
+	// command := fmt.Sprintf("gcloud compute instances create %s --zone=%s --machine-type=%s --image-project=%s --image=%s", config.Name, config.Zone, config.MachineType, config.ImageInfo.Project, config.ImageInfo.Family)
 	// Add other flags and parameters as needed
 
 	// Execute the 'gcloud' command
@@ -479,7 +501,7 @@ func chooseRegion(regions []string) (string, error) {
 }
 
 // Function to prompt the user for GCE instance configuration
-func promptForGCEInstanceConfig(selectedZone string, selectedMachineType MachineTypeInfo) (GCEInstanceConfig, error) {
+func promptForGCEInstanceConfig(selectedZone string, selectedMachineType MachineTypeInfo, selectedImage ImageInfo) (GCEInstanceConfig, error) {
 	prompt := []*promptui.Prompt{
 		{
 			Label: "Enter instance name:",
@@ -507,8 +529,124 @@ func promptForGCEInstanceConfig(selectedZone string, selectedMachineType Machine
 			config.Name = result
 			// Set other configuration fields based on prompts
 		}
-		config.Zone = selectedZone
-		config.MachineType = selectedMachineType.Name
+
 	}
+	config.Zone = selectedZone
+	config.MachineType = selectedMachineType.Name
+	config.ImageInfo = selectedImage
 	return config, nil
+}
+
+type ImageInfo struct {
+	Name    string
+	Project string
+	Family  string
+}
+
+func chooseImage() (ImageInfo, error) {
+	cmd := exec.Command("gcloud", "compute", "images", "list")
+
+	// Run the command and capture its output
+	output, err := cmd.Output()
+	if err != nil {
+		fmt.Println("Error running gcloud command:", err)
+		os.Exit(1)
+	}
+
+	// Split the output into lines
+	lines := strings.Split(string(output), "\n")
+
+	// Extract project and family information into a slice of ImageInfo structs
+	imageInfoList := []ImageInfo{}
+	for _, line := range lines[1:] { // Skip the header
+		fields := strings.Fields(line)
+		if len(fields) >= 3 {
+			name := fields[0]
+			project := fields[1]
+			family := fields[2]
+			imageInfo := ImageInfo{Name: name, Project: project, Family: family}
+			imageInfoList = append(imageInfoList, imageInfo)
+		}
+	}
+
+	// Create a prompt to select a PROJECT
+	projectPrompt := promptui.Select{
+		Label: "Select a PROJECT",
+		Items: getUniqueProjects(imageInfoList), // Get unique projects from the struct slice
+	}
+
+	_, selectedProject, err := projectPrompt.Run() // Execute the prompt to select a project
+
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+
+	// selectedProject := strings.TrimSpace(result)
+
+	// Display associated FAMILY values for the selected PROJECT
+	selectedFamilies := getFamiliesForProject(imageInfoList, selectedProject)
+
+	var selectedImageInfo ImageInfo
+	if len(selectedFamilies) > 0 {
+		familyPrompt := promptui.Select{
+			Label: "Select a FAMILY for " + selectedProject,
+			Items: selectedFamilies, // Display families associated with the selected project
+		}
+
+		_, selectedFamily, err := familyPrompt.Run() // Let the user select a FAMILY
+
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
+		// Find the corresponding NAME for the selected FAMILY
+		selectedName := getNameForFamily(imageInfoList, selectedProject, selectedFamily)
+
+		// Print the selected PROJECT and FAMILY
+		selectedImageInfo = ImageInfo{Name: selectedName, Project: selectedProject, Family: selectedFamily}
+		// fmt.Println("You selected PROJECT:", selectedProject)
+		// fmt.Println("You selected FAMILY:", selectedFamily)
+		// fmt.Println("You selected Name:", selectedName)
+		return selectedImageInfo, nil
+	} else {
+		fmt.Println("No FAMILY values found for", selectedProject)
+		return selectedImageInfo, err
+	}
+
+}
+
+// getUniqueProjects extracts unique PROJECT values from the struct slice
+func getUniqueProjects(imageInfoList []ImageInfo) []string {
+	projectsMap := make(map[string]bool)
+	var projects []string
+	for _, imageInfo := range imageInfoList {
+		if _, exists := projectsMap[imageInfo.Project]; !exists {
+			projectsMap[imageInfo.Project] = true
+			projects = append(projects, imageInfo.Project)
+		}
+	}
+	return projects
+}
+
+// getFamiliesForProject returns a slice of FAMILY values associated with a selected PROJECT
+func getFamiliesForProject(imageInfoList []ImageInfo, selectedProject string) []string {
+	var families []string
+	for _, imageInfo := range imageInfoList {
+		if imageInfo.Project == selectedProject {
+			families = append(families, imageInfo.Family)
+		}
+	}
+	return families
+}
+
+// getNameForFamily returns the NAME associated with a selected FAMILY for a given PROJECT
+func getNameForFamily(imageInfoList []ImageInfo, selectedProject, selectedFamily string) string {
+	for _, imageInfo := range imageInfoList {
+		if imageInfo.Project == selectedProject && imageInfo.Family == selectedFamily {
+			return imageInfo.Name
+		}
+	}
+	return "No matching NAME found"
 }
