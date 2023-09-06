@@ -11,6 +11,7 @@ func showMainMenu() int {
 	menuPrompt := promptui.Select{
 		Label: "Choose an operation:",
 		Items: []string{"\U0001F4C1 Copy File/Directory (SCP)", "\U0001F5A5  Check Systeminfo", "\U0001F4E1 Check Network", "\U0001F433 Check Container", "\U0001F511 SSH", "\U0001F30E Cloud", "Quit"},
+		Size:  10,
 	}
 
 	scpIndex, _, err := menuPrompt.Run()

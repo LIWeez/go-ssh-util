@@ -18,24 +18,37 @@ const (
 	RemoteExecution ExecutionMode = 2
 )
 
-func ChooseAlias() (types.SSHhost, ExecutionMode, error) {
+func ChooseAlias(mode bool) (types.SSHhost, ExecutionMode, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return types.SSHhost{}, LocalExecution, fmt.Errorf("user home dir failed: %v", err)
 	}
+	if mode {
+		executionMode, err := chooseExecutionMode()
+		if err != nil {
+			return types.SSHhost{}, LocalExecution, err
+		}
 
-	executionMode, err := chooseExecutionMode()
-	if err != nil {
-		return types.SSHhost{}, LocalExecution, err
-	}
-
-	if executionMode == RemoteExecution {
+		if executionMode == RemoteExecution {
+			host, err := chooseRemoteAlias(home)
+			return host, RemoteExecution, err
+		}
+	} else {
 		host, err := chooseRemoteAlias(home)
 		return host, RemoteExecution, err
 	}
+	// executionMode, err := chooseExecutionMode()
+	// if err != nil {
+	// 	return types.SSHhost{}, LocalExecution, err
+	// }
+
+	// if executionMode == RemoteExecution {
+	// 	host, err := chooseRemoteAlias(home)
+	// 	return host, RemoteExecution, err
+	// }
 
 	// Local execution mode
-	fmt.Println("You chose Local execution mode. You can execute your command locally.")
+	// fmt.Println("You chose Local execution mode. You can execute your command locally.")
 	return types.SSHhost{}, LocalExecution, nil
 }
 

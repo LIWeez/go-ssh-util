@@ -38,7 +38,7 @@ func RunSystemInfo() {
 			actions.RunCheckSwap()
 		case 4: // Check Network
 			actions.RunCheckNetwork()
-		case 5: // Return to main menu
+		default: // Return to main menu
 			systemInfoActive = false
 		}
 	}

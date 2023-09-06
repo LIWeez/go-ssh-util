@@ -8,7 +8,7 @@ import (
 )
 
 func RunStatus() {
-	selectedHost, ExecutionMode, err := config.ChooseAlias()
+	selectedHost, ExecutionMode, err := config.ChooseAlias(true)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return

@@ -34,7 +34,7 @@ func RunCloud() {
 		case 1:
 			RunAWS()
 
-		case 2: // Return to main menu
+		default: // Return to main menu
 			CloudActive = false
 		}
 	}

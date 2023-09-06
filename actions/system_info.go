@@ -8,51 +8,71 @@ import (
 )
 
 func RunCheckCPU() {
-	selectedHost, _, err := config.ChooseAlias()
+	selectedHost, ExecutionMode, err := config.ChooseAlias(true)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return
 	}
-
-	ssh.ExecuteRemoteCommand("lscpu", fmt.Sprintf("%s@%s", selectedHost.User, selectedHost.Host), selectedHost.Port)
+	command := "lscpu"
+	if ExecutionMode == 1 {
+		ssh.ExecuteLocalCommand(command)
+	} else {
+		ssh.ExecuteRemoteCommand(command, fmt.Sprintf("%s@%s", selectedHost.User, selectedHost.Host), selectedHost.Port)
+	}
 }
 
 func RunCheckMemory() {
-	selectedHost, _, err := config.ChooseAlias()
+	selectedHost, ExecutionMode, err := config.ChooseAlias(true)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return
 	}
-
-	ssh.ExecuteRemoteCommand("free -h", fmt.Sprintf("%s@%s", selectedHost.User, selectedHost.Host), selectedHost.Port)
+	command := "free -h"
+	if ExecutionMode == 1 {
+		ssh.ExecuteLocalCommand(command)
+	} else {
+		ssh.ExecuteRemoteCommand(command, fmt.Sprintf("%s@%s", selectedHost.User, selectedHost.Host), selectedHost.Port)
+	}
 }
 
 func RunCheckDisk() {
-	selectedHost, _, err := config.ChooseAlias()
+	selectedHost, ExecutionMode, err := config.ChooseAlias(true)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return
 	}
-
-	ssh.ExecuteRemoteCommand("df -h", fmt.Sprintf("%s@%s", selectedHost.User, selectedHost.Host), selectedHost.Port)
+	command := "df -h"
+	if ExecutionMode == 1 {
+		ssh.ExecuteLocalCommand(command)
+	} else {
+		ssh.ExecuteRemoteCommand(command, fmt.Sprintf("%s@%s", selectedHost.User, selectedHost.Host), selectedHost.Port)
+	}
 }
 
 func RunCheckSwap() {
-	selectedHost, _, err := config.ChooseAlias()
+	selectedHost, ExecutionMode, err := config.ChooseAlias(true)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return
 	}
-
-	ssh.ExecuteRemoteCommand("cat /proc/swaps", fmt.Sprintf("%s@%s", selectedHost.User, selectedHost.Host), selectedHost.Port)
+	command := "cat /proc/swaps"
+	if ExecutionMode == 1 {
+		ssh.ExecuteLocalCommand(command)
+	} else {
+		ssh.ExecuteRemoteCommand(command, fmt.Sprintf("%s@%s", selectedHost.User, selectedHost.Host), selectedHost.Port)
+	}
 }
 
 func RunCheckNetwork() {
-	selectedHost, _, err := config.ChooseAlias()
+	selectedHost, ExecutionMode, err := config.ChooseAlias(true)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return
 	}
-
-	ssh.ExecuteRemoteCommand("ip", fmt.Sprintf("%s@%s", selectedHost.User, selectedHost.Host), selectedHost.Port)
+	command := "ifconfig"
+	if ExecutionMode == 1 {
+		ssh.ExecuteLocalCommand(command)
+	} else {
+		ssh.ExecuteRemoteCommand(command, fmt.Sprintf("%s@%s", selectedHost.User, selectedHost.Host), selectedHost.Port)
+	}
 }

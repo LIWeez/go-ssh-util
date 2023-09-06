@@ -8,11 +8,15 @@ import (
 )
 
 func RunPing() {
-	selectedHost, _, err := config.ChooseAlias()
+	selectedHost, ExecutionMode, err := config.ChooseAlias(true)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return
 	}
-
-	ssh.ExecuteRemoteCommand("ping 8.8.8.8", fmt.Sprintf("%s@%s", selectedHost.User, selectedHost.Host), selectedHost.Port)
+	command := "ping 8.8.8.8"
+	if ExecutionMode == 1 {
+		ssh.ExecuteLocalCommand(command)
+	} else {
+		ssh.ExecuteRemoteCommand(command, fmt.Sprintf("%s@%s", selectedHost.User, selectedHost.Host), selectedHost.Port)
+	}
 }

@@ -30,7 +30,7 @@ func RunNetwork() {
 		switch networkIndex {
 		case 0:
 			actions.RunPing()
-		case 1: // Return to main menu
+		default: // Return to main menu
 			networkActive = false
 		}
 	}

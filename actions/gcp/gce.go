@@ -37,7 +37,7 @@ type MachineTypeInfo struct {
 }
 
 func RunGetVMs() {
-	selectedHost, ExecutionMode, err := config.ChooseAlias()
+	selectedHost, ExecutionMode, err := config.ChooseAlias(true)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return
@@ -52,7 +52,7 @@ func RunGetVMs() {
 }
 
 func RunStartVM() {
-	selectedHost, ExecutionMode, err := config.ChooseAlias()
+	selectedHost, ExecutionMode, err := config.ChooseAlias(true)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return
@@ -72,7 +72,7 @@ func RunStartVM() {
 }
 
 func RunStopVM() {
-	selectedHost, ExecutionMode, err := config.ChooseAlias()
+	selectedHost, ExecutionMode, err := config.ChooseAlias(true)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return
@@ -176,7 +176,7 @@ func parseGCEInstances(output string) []GCEInstance {
 }
 
 func RunCreateGCEInstance() {
-	selectedHost, ExecutionMode, err := config.ChooseAlias()
+	selectedHost, ExecutionMode, err := config.ChooseAlias(true)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		return

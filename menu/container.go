@@ -32,7 +32,7 @@ func RunContainer() {
 		case 0:
 			actions.RunStatus()
 
-		case 1: // Return to main menu
+		default: // Return to main menu
 			containerActive = false
 		}
 	}
