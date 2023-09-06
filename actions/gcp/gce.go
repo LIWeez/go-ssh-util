@@ -289,20 +289,30 @@ func chooseMachineTypeSeries() (string, error) {
 	series := []struct {
 		Label       string
 		Description string
+		CPU         string
+		Memory      string
+		Platform    string
 	}{
-		{"c3", "Intel Sapphire Rapids CPU"},
-		{"e2", "根據可用性選擇CPU"},
-		{"n2", "Intel Cascade Lake 和 Ice Lake CPU"},
-		{"n2d", "AMD EPYC CPU"},
-		{"t2a", "Ampere Altra ARM CPU"},
-		{"t2d", "AMD EPYC Milan CPU"},
-		{"n1", "Intel Skylake CPU"},
+		{"c3", "具備穩定高效能", "4-176", "8 - 1408 GB", "Intel Sapphire Rapids"},
+		{"e2", "低成本，適合日常運算", "0.25-32", "1 - 128 GB", "按照供應情形顯示"},
+		{"n2", "兼顧價格和效能", "2 - 128", "2 - 864 GB", "Intel Cascade 和 Ice Lake"},
+		{"n2d", "兼顧價格和效能", "2 - 224", "2 - 896 GB", "AMD EPYC"},
+		{"t2a", "向外擴充工作負載", "1 - 48", "4 - 192 GB", "Ampere Altra Arm"},
+		{"t2d", "向外擴充工作負載", "1 - 60", "4 - 240 GB", "AMD EPYC Milan"},
+		{"n1", "兼顧價格和效能", "0.25 - 96", "0.6 - 624 GB", "Intel Skylake"},
 	}
 	templates := &promptui.SelectTemplates{
 		Label:    "{{ . }}?",
 		Active:   "\U0001F4BB {{ .Label | cyan }} ({{ .Description | red }})",
 		Inactive: "  {{ .Label | cyan }} ({{ .Description | red }})",
 		Selected: "\U0001F4BB {{ .Label | red | cyan }}",
+		Details: `
+	--------- Detail ----------
+	{{ "Series:" | faint }}	{{ .Label }}
+	{{ "Description:" | faint }}	{{ .Description }}
+	{{ "CPU:" | faint }}	{{ .CPU }}
+	{{ "Memory:" | faint }}	{{ .Memory }}
+	{{ "Platform:" | faint }}	{{ .Platform }}`,
 	}
 
 	prompt := promptui.Select{
@@ -328,7 +338,7 @@ func chooseMachineTypeSeries() (string, error) {
 func chooseMachineTypeGroup() (string, error) {
 	prompt := promptui.Select{
 		Label: "Select a machine type group:",
-		Items: []string{"standard", "cpu", "mem", "gpu"},
+		Items: []string{"standard", "highcpu", "highmem", "gpu"},
 		Size:  10,
 	}
 
@@ -343,6 +353,7 @@ func chooseMachineTypeGroup() (string, error) {
 
 // Function to list machine types for the selected group and zone
 func listMachineTypes(zone, series, group string) ([]MachineTypeInfo, error) {
+	fmt.Printf("%s-%s", series, group)
 	// Construct the 'gcloud' command to list machine types with the specified zone filter
 	cmd := exec.Command("gcloud", "compute", "machine-types", "list", "--filter=zone:"+zone)
 	cmd.Stderr = os.Stderr
@@ -358,9 +369,10 @@ func listMachineTypes(zone, series, group string) ([]MachineTypeInfo, error) {
 	}
 	var machineTypes []MachineTypeInfo
 	scanner := bufio.NewScanner(stdout)
+
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.Contains(line, "n2-standard") {
+		if strings.Contains(line, fmt.Sprintf("%s-%s", series, group)) {
 			fields := strings.Fields(line)
 			if len(fields) >= 4 {
 				machineType := MachineTypeInfo{
@@ -391,9 +403,9 @@ func listMachineTypes(zone, series, group string) ([]MachineTypeInfo, error) {
 func chooseMachineType(machineTypes []MachineTypeInfo) (MachineTypeInfo, error) {
 	templates := &promptui.SelectTemplates{
 		Label:    "{{ . }}",
-		Active:   "\U0001F622 {{ .Name | cyan }} (Zone: {{ .Zone }}, CPU: {{ .CPU }}, Memory: {{ .Memory }})",
+		Active:   "\U0001F449 {{ .Name | cyan }} (Zone: {{ .Zone }}, CPU: {{ .CPU }}, Memory: {{ .Memory }})",
 		Inactive: "  {{ .Name | cyan }} (Zone: {{ .Zone }}, CPU: {{ .CPU }}, Memory: {{ .Memory }})",
-		Selected: "\U0001F622 {{ .Name | red | cyan }} (Zone: {{ .Zone | red }}, CPU: {{ .CPU | red }}, Memory: {{ .Memory | red }})",
+		Selected: "\U0001F449 {{ .Name | red | cyan }} (Zone: {{ .Zone | red }}, CPU: {{ .CPU | red }}, Memory: {{ .Memory | red }})",
 		Details: `
 	--------- Detail ----------
 	{{ "Name:" | faint }}	{{ .Name }}
