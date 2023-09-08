@@ -28,6 +28,8 @@ type GCEInstanceConfig struct {
 	MachineType string
 	ImageInfo   ImageInfo
 	Subnet      string
+	DiskType    string
+	DiskSize    string
 	// Add other configuration fields as needed
 }
 
@@ -253,8 +255,11 @@ func RunCreateGCEInstance() {
 	if err != nil {
 		log.Fatalf("Error: %v", err)
 	}
+
+	selectedDiskType, selectedDiskSize := chooseDiskType(selectedZone)
+
 	// Prompt the user for GCE instance configuration
-	config, err := promptForGCEInstanceConfig(selectedZone, selectedMachineType, selectedImage, selectedSubnet)
+	config, err := promptForGCEInstanceConfig(selectedZone, selectedMachineType, selectedImage, selectedSubnet, selectedDiskType, selectedDiskSize)
 	fmt.Println(config)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -275,6 +280,12 @@ func RunCreateGCEInstance() {
 	cmdBuilder.WriteString(config.ImageInfo.Name)
 	cmdBuilder.WriteString(" --subnet=")
 	cmdBuilder.WriteString(config.Subnet)
+	cmdBuilder.WriteString(" --boot-disk-device-name=")
+	cmdBuilder.WriteString(config.Name)
+	cmdBuilder.WriteString(" --boot-disk-type=")
+	cmdBuilder.WriteString(config.DiskType)
+	cmdBuilder.WriteString(" --boot-disk-size=")
+	cmdBuilder.WriteString(config.DiskSize)
 
 	// Get the final command string
 	command := cmdBuilder.String()
@@ -521,7 +532,7 @@ func chooseRegion(regions []string) (string, error) {
 }
 
 // Function to prompt the user for GCE instance configuration
-func promptForGCEInstanceConfig(selectedZone string, selectedMachineType MachineTypeInfo, selectedImage ImageInfo, selectedSubnet string) (GCEInstanceConfig, error) {
+func promptForGCEInstanceConfig(selectedZone string, selectedMachineType MachineTypeInfo, selectedImage ImageInfo, selectedSubnet, selectedDiskType, selectedDiskSize string) (GCEInstanceConfig, error) {
 	prompt := []*promptui.Prompt{
 		{
 			Label: "Enter instance name:",
@@ -555,6 +566,8 @@ func promptForGCEInstanceConfig(selectedZone string, selectedMachineType Machine
 	config.MachineType = selectedMachineType.Name
 	config.ImageInfo = selectedImage
 	config.Subnet = selectedSubnet
+	config.DiskType = selectedDiskType
+	config.DiskSize = selectedDiskSize
 	return config, nil
 }
 
@@ -792,4 +805,82 @@ func chooseSubnetwork(network, region string) (subnet string, err error) {
 	selectedSubnetInfo := subnetInfoList[index]
 	return fmt.Sprintf("projects/wacare-alpha/regions/%s/subnetworks/%s", region, selectedSubnetInfo.Name), nil
 	// return selectedSubnet, nil
+}
+
+// DiskTypeInfo represents information about a disk type
+type DiskTypeInfo struct {
+	Name           string
+	Zone           string
+	ValidDiskSizes string
+}
+
+func chooseDiskType(selectedZone string) (diskType, diskSize string) {
+	// Run gcloud compute disk-types list command and capture its output
+	command := fmt.Sprintf("gcloud compute disk-types list --filter=zone:%s", selectedZone)
+	cmd := exec.Command("bash", "-c", command)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		fmt.Printf("Error running gcloud command: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Split the output into lines
+	lines := strings.Split(string(output), "\n")
+
+	// Create a slice to store DiskTypeInfo objects
+	var diskTypes []DiskTypeInfo
+
+	// Parse each line and create DiskTypeInfo objects
+	for _, line := range lines[1:] {
+		if line != "" {
+			parts := strings.Fields(line)
+			if len(parts) == 3 {
+				diskType := DiskTypeInfo{
+					Name:           parts[0],
+					Zone:           parts[1],
+					ValidDiskSizes: parts[2],
+				}
+				diskTypes = append(diskTypes, diskType)
+			}
+		}
+	}
+
+	// Create a prompt to select a disk type
+	prompt := promptui.Select{
+		Label: "Select a Disk Type",
+		Items: diskTypes,
+		Templates: &promptui.SelectTemplates{
+			Label:    "{{ .Name }}",
+			Active:   "\U0001F4E1 {{ .Name | cyan  }}",
+			Inactive: "   {{ .Name | faint  }}",
+			Selected: "\U0001F4E1 {{ .Name | green }}",
+			Details: `
+--------- Detail ----------
+{{ "Disk Type:" | faint }}	{{ .Name }}
+{{ "Zone:" | faint }}	{{ .Zone }}
+{{ "Valid Disk Sizes:" | faint }}	{{ .ValidDiskSizes }}
+`,
+		},
+	}
+
+	// Prompt the user to select a disk type
+	index, _, err := prompt.Run()
+	if err != nil {
+		fmt.Printf("Prompt failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Get the selected disk type
+	selectedDiskType := diskTypes[index]
+	diskType = selectedDiskType.Name
+	// Prompt the user to enter a disk size
+	scanner := bufio.NewScanner(os.Stdin)
+	fmt.Printf("Enter Disk Size , Range -> %s: ", diskTypes[index].ValidDiskSizes)
+	scanner.Scan()
+	diskSize = scanner.Text()
+	// Print the selected disk type and entered disk size
+	fmt.Printf("\nSelected Disk Type:\nDisk Type: %s\nZone: %s\nValid Disk Sizes: %s\nEntered Disk Size: %sGB\n",
+		selectedDiskType.Name, selectedDiskType.Zone, selectedDiskType.ValidDiskSizes, diskSize)
+	return diskType, diskSize
+
 }
