@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go-ssh-util/config"
 	"go-ssh-util/ssh"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -26,6 +27,7 @@ type GCEInstanceConfig struct {
 	Zone        string
 	MachineType string
 	ImageInfo   ImageInfo
+	Subnet      string
 	// Add other configuration fields as needed
 }
 
@@ -246,9 +248,13 @@ func RunCreateGCEInstance() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return
 	}
-
+	selectedNetwork := chooseNetwork()
+	selectedSubnet, err := chooseSubnetwork(selectedNetwork, selectedRegion)
+	if err != nil {
+		log.Fatalf("Error: %v", err)
+	}
 	// Prompt the user for GCE instance configuration
-	config, err := promptForGCEInstanceConfig(selectedZone, selectedMachineType, selectedImage)
+	config, err := promptForGCEInstanceConfig(selectedZone, selectedMachineType, selectedImage, selectedSubnet)
 	fmt.Println(config)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -267,6 +273,8 @@ func RunCreateGCEInstance() {
 	cmdBuilder.WriteString(config.ImageInfo.Project)
 	cmdBuilder.WriteString(" --image=")
 	cmdBuilder.WriteString(config.ImageInfo.Name)
+	cmdBuilder.WriteString(" --subnet=")
+	cmdBuilder.WriteString(config.Subnet)
 
 	// Get the final command string
 	command := cmdBuilder.String()
@@ -513,7 +521,7 @@ func chooseRegion(regions []string) (string, error) {
 }
 
 // Function to prompt the user for GCE instance configuration
-func promptForGCEInstanceConfig(selectedZone string, selectedMachineType MachineTypeInfo, selectedImage ImageInfo) (GCEInstanceConfig, error) {
+func promptForGCEInstanceConfig(selectedZone string, selectedMachineType MachineTypeInfo, selectedImage ImageInfo, selectedSubnet string) (GCEInstanceConfig, error) {
 	prompt := []*promptui.Prompt{
 		{
 			Label: "Enter instance name:",
@@ -546,6 +554,7 @@ func promptForGCEInstanceConfig(selectedZone string, selectedMachineType Machine
 	config.Zone = selectedZone
 	config.MachineType = selectedMachineType.Name
 	config.ImageInfo = selectedImage
+	config.Subnet = selectedSubnet
 	return config, nil
 }
 
@@ -588,7 +597,7 @@ func chooseImage() (ImageInfo, error) {
 	}
 
 	_, selectedProject, err := projectPrompt.Run() // Execute the prompt to select a project
-
+	fmt.Println(selectedProject)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -661,4 +670,126 @@ func getNameForFamily(imageInfoList []ImageInfo, selectedProject, selectedFamily
 		}
 	}
 	return "No matching NAME found"
+}
+
+type SubnetInfo struct {
+	Name      string
+	Region    string
+	Network   string
+	IPRange   string
+	StackType string
+}
+
+func chooseNetwork() (network string) {
+	cmd := exec.Command("gcloud", "compute", "networks", "list")
+
+	// Run the command and capture its output
+	output, err := cmd.Output()
+	if err != nil {
+		fmt.Println("Error running gcloud command:", err)
+		os.Exit(1)
+	}
+
+	// Split the output into lines
+	lines := strings.Split(string(output), "\n")
+	// Extract network names into a slice of NetworkInfo structs
+	networkNames := []string{}
+	for _, line := range lines[1:] { // Skip the header
+		fields := strings.Fields(line)
+		if len(fields) >= 1 {
+			name := fields[0]
+			networkNames = append(networkNames, name)
+		}
+	}
+
+	// Create a custom template for displaying network information
+	templates := &promptui.SelectTemplates{
+		Label:    "{{ . }}",
+		Active:   "-> {{ .Name | cyan }}",
+		Inactive: "   {{ .Name | faint }}",
+		Selected: "\U0001F4E1 {{ .Name | green }}",
+	}
+
+	// Create a prompt to select a network
+	networkPrompt := promptui.Select{
+		Label:     "Select a Network",
+		Items:     networkNames,
+		Templates: templates,
+	}
+
+	_, selectedNetwork, err := networkPrompt.Run() // Execute the prompt to select a network
+
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	fmt.Printf("You selected network:%s", selectedNetwork)
+	return selectedNetwork
+}
+
+func chooseSubnetwork(network, region string) (subnet string, err error) {
+	command := fmt.Sprintf("gcloud compute networks subnets list --network=%s --filter=region:%s", network, region)
+	// cmd := exec.Command("gcloud", "compute", "networks", "subnets", "list", fmt.Sprintf(" --network=%s --filter=region:%s", network, region))
+	// cmd := exec.Command(command)
+	cmd := exec.Command("bash", "-c", command)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Fatalf("Error: %v", err)
+	}
+
+	// Convert the output to a string
+	outputStr := string(output)
+
+	// Split the output into lines
+	lines := strings.Split(string(outputStr), "\n")
+
+	// Extract subnet information into a slice of SubnetInfo structs
+	subnetInfoList := []SubnetInfo{}
+	for _, line := range lines[1:] { // Skip the header
+		fields := strings.Fields(line)
+		if len(fields) >= 5 {
+			name := fields[0]
+			region := fields[1]
+			network := fields[2]
+			ip_range := fields[3]
+			stack_type := fields[4]
+			subnetInfo := SubnetInfo{Name: name, Region: region, Network: network, IPRange: ip_range, StackType: stack_type}
+			subnetInfoList = append(subnetInfoList, subnetInfo)
+		}
+	}
+	// fmt.Println(subnetInfoList)
+	// return subnetInfoList, nil
+	// }
+
+	// Create a custom template for displaying network information
+	templates := &promptui.SelectTemplates{
+		Label:    "{{ . }}",
+		Active:   "\U0001F4E1 {{ .Name | cyan }}",
+		Inactive: "   {{ .Name | faint }}",
+		Selected: "\U0001F4E1 {{ .Name | green }}",
+		Details: `
+--------- Detail ----------
+{{ "Name:" | faint }}	{{ .Name }}
+{{ "Region:" | faint }}	{{ .Region }}
+{{ "Network:" | faint }}	{{ .Network }}
+{{ "IPRange:" | faint }}	{{ .IPRange }}
+{{ "StackType:" | faint }}	{{ .StackType }}`,
+	}
+
+	// Create a prompt to select a network
+	subnetPrompt := promptui.Select{
+		Label:     "Select a Subnet",
+		Items:     subnetInfoList,
+		Templates: templates,
+	}
+
+	index, _, err := subnetPrompt.Run() // Execute the prompt to select a network
+
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	selectedSubnetInfo := subnetInfoList[index]
+	return fmt.Sprintf("projects/wacare-alpha/regions/%s/subnetworks/%s", region, selectedSubnetInfo.Name), nil
+	// return selectedSubnet, nil
 }
